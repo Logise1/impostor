@@ -832,7 +832,6 @@
             return collection(getGameRef(gameId), 'players');
         }
         
-        // --- NUEVO: Referencia al Chat ---
         function getChatRef(gameId) {
             return collection(getGameRef(gameId), 'chat');
         }
@@ -912,7 +911,7 @@
                 votesReceived: 0,
                 score: 0,
                 hasSkippedTutorial: false,
-                wantsToVote: false // <-- NUEVO
+                wantsToVote: false 
             });
             
             listenToGame(gameId);
@@ -959,7 +958,7 @@
                         showScreen('tutorial');
                         playTutorial();
                         break;
-                    case 'clue-giving': // <-- Reutilizado para Chat
+                    case 'clue-giving': 
                         fadeOutMusic(); 
                         showScreen('game'); 
                         updateGameScreenUI(gameData); 
@@ -1009,8 +1008,8 @@
                         }
                     }
                     
-                    checkAllPlayersVoted(players); // Comprobar votos
-                    checkAllWantToVote(players); // <-- NUEVO: Comprobar si todos quieren votar
+                    checkAllPlayersVoted(players); 
+                    checkAllWantToVote(players); 
                 }
             });
         }
@@ -1035,62 +1034,62 @@
             });
         }
 
-        // --- NUEVO: Pantalla de Juego (Chat) ---
+        // --- FUNCIÓN DE PANTALLA DE JUEGO (REESCRITA PARA ARREGLAR EL BUG) ---
         function updateGameScreenUI(gameData) {
             if (!playerCache.size) return; 
 
             const myData = playerCache.get(currentUserId);
             if (!myData) return; 
 
-            // --- Lógica de Fases (Revelar vs Chat) ---
+            // --- 1. Mostrar Palabra Secreta (Solo una vez) ---
+            const wordDiv = document.getElementById('game-secret-word');
+            let newWord = myData.word || '...';
+            let newClassName = 'secret-word normal'; // Siempre verde (Modo Ciego)
+            
+            if (wordDiv.textContent !== newWord && newWord !== '...') {
+                wordDiv.textContent = newWord;
+                wordDiv.className = newClassName;
+                wordDiv.classList.add('secret-word-reveal');
+                setTimeout(() => wordDiv.classList.remove('secret-word-reveal'), 700);
+            } else if (wordDiv.textContent === '...') {
+                wordDiv.textContent = newWord; 
+                wordDiv.className = newClassName;
+            }
+
+            // --- 2. Actualizar Botón "Ir a Votar" ---
+            const voteBtn = document.getElementById('go-to-vote-btn');
+            voteBtn.disabled = myData.wantsToVote;
+            voteBtn.textContent = myData.wantsToVote ? 'Esperando a los demás...' : 'Ir a Votar';
+            
+            // --- 3. Iniciar Temporizador Maestro ---
+            if (visualTimerInterval) clearInterval(visualTimerInterval); 
+            
             const revealPhase = document.getElementById('reveal-phase');
             const chatPhase = document.getElementById('chat-phase');
             const timerBar = document.getElementById('timer-bar-fill');
             const timerText = document.getElementById('timer-text');
             const startTime = gameData.turnStartTime || Date.now();
-            const elapsed = (Date.now() - (startTime.seconds ? startTime.toMillis() : startTime)) / 1000;
+            
+            visualTimerInterval = setInterval(() => {
+                const elapsed = (Date.now() - (startTime.seconds ? startTime.toMillis() : startTime)) / 1000;
 
-            if (elapsed < REVEAL_TIME_SECONDS) {
-                // --- FASE DE REVELACIÓN (10s) ---
-                revealPhase.style.display = 'block';
-                chatPhase.style.display = 'none';
-
-                // Mostrar palabra (Modo Ciego)
-                const wordDiv = document.getElementById('game-secret-word');
-                let newWord = myData.word || '...';
-                let newClassName = 'secret-word normal'; // Siempre verde
-                
-                if (wordDiv.textContent !== newWord && newWord !== '...') {
-                    wordDiv.textContent = newWord;
-                    wordDiv.className = newClassName;
-                    wordDiv.classList.add('secret-word-reveal');
-                    setTimeout(() => wordDiv.classList.remove('secret-word-reveal'), 700);
-                } else if (wordDiv.textContent === '...') {
-                    wordDiv.textContent = newWord; 
-                    wordDiv.className = newClassName;
-                }
-                
-                // Actualizar temporizador de 10s
-                if (visualTimerInterval) clearInterval(visualTimerInterval);
-                visualTimerInterval = setInterval(() => {
-                    const elapsed = (Date.now() - (startTime.seconds ? startTime.toMillis() : startTime)) / 1000;
+                if (elapsed < REVEAL_TIME_SECONDS) {
+                    // --- FASE DE REVELACIÓN (10s) ---
+                    revealPhase.style.display = 'block';
+                    chatPhase.style.display = 'none';
+                    
                     const remaining = Math.max(0, REVEAL_TIME_SECONDS - elapsed);
                     const percentage = (remaining / REVEAL_TIME_SECONDS) * 100;
                     
                     if (timerText) timerText.textContent = `Revelando en ${Math.ceil(remaining)}s`;
                     if (timerBar) timerBar.style.width = `${percentage}%`;
-                }, 250);
 
-            } else {
-                // --- FASE DE CHAT (5 min) ---
-                revealPhase.style.display = 'none';
-                chatPhase.style.display = 'block';
-
-                // Actualizar temporizador de 5 min
-                if (visualTimerInterval) clearInterval(visualTimerInterval);
-                visualTimerInterval = setInterval(() => {
-                    const elapsedSinceStart = (Date.now() - (startTime.seconds ? startTime.toMillis() : startTime)) / 1000;
-                    const elapsedInChat = elapsedSinceStart - REVEAL_TIME_SECONDS;
+                } else if (elapsed < (REVEAL_TIME_SECONDS + CHAT_TIME_SECONDS)) {
+                    // --- FASE DE CHAT (5 min) ---
+                    revealPhase.style.display = 'none';
+                    chatPhase.style.display = 'block';
+                    
+                    const elapsedInChat = elapsed - REVEAL_TIME_SECONDS;
                     const remaining = Math.max(0, CHAT_TIME_SECONDS - elapsedInChat);
                     const percentage = (remaining / CHAT_TIME_SECONDS) * 100;
                     
@@ -1098,17 +1097,12 @@
                     const seconds = Math.floor(remaining % 60);
                     if (timerText) timerText.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
                     if (timerBar) timerBar.style.width = `${percentage}%`;
-
-                    if (remaining <= 0) {
-                        if (visualTimerInterval) clearInterval(visualTimerInterval);
-                    }
-                }, 250);
                 
-                // Actualizar botón de "Ir a Votar"
-                const voteBtn = document.getElementById('go-to-vote-btn');
-                voteBtn.disabled = myData.wantsToVote;
-                voteBtn.textContent = myData.wantsToVote ? 'Esperando a los demás...' : 'Ir a Votar';
-            }
+                } else {
+                    // --- TIEMPO FUERA ---
+                    if (visualTimerInterval) clearInterval(visualTimerInterval);
+                }
+            }, 250);
         }
         
         // --- NUEVO: Escuchar Chat ---
@@ -1165,7 +1159,6 @@
             
             const playerRef = doc(getPlayersRef(currentGameId), currentUserId);
             await updateDoc(playerRef, { wantsToVote: true });
-            // El listener del host (checkAllWantToVote) se encargará del resto
         };
 
 
@@ -1181,7 +1174,6 @@
                 votingItem.className = 'player-list-item flex justify-between items-center';
                 
                 const textSpan = document.createElement('span');
-                // Quitar la pista, solo mostrar el nombre
                 textSpan.innerHTML = `<span class="font-semibold">${player.name}</span>`;
                 votingItem.appendChild(textSpan);
                 
@@ -1247,7 +1239,7 @@
                     votedFor: '',
                     votesReceived: 0,
                     hasSkippedTutorial: false,
-                    wantsToVote: false // <-- Resetear
+                    wantsToVote: false 
                 });
             });
             
@@ -1257,11 +1249,10 @@
                 innocentWord: innocentWord, 
                 impostorWord: impostorWord,
                 round: gameData.round || 1,
-                turnStartTime: serverTimestamp(), // <-- Temporizador unificado
+                turnStartTime: serverTimestamp(), 
                 scoresSnapshot: null 
             });
             
-            // Limpiar el chat de la ronda anterior
             const chatQuery = await getDocs(getChatRef(currentGameId));
             chatQuery.forEach(doc => {
                 batch.delete(doc.ref);
@@ -1270,12 +1261,8 @@
             await batch.commit();
             isStartingGame = false;
             
-            // Iniciar el listener del chat para la nueva ronda
             listenToChat(currentGameId);
         }
-        
-        // --- Lógica de Jugador (Juego) ---
-        // (Ya no hay 'submit-clue-btn')
         
         // --- NUEVO: Host comprueba si todos quieren votar ---
         function checkAllWantToVote(players) {
@@ -1300,11 +1287,9 @@
             
             const elapsed = (Date.now() - startTime) / 1000;
             
-            // Tiempo total = 10s de revelación + 5min de chat
             const totalRoundTime = REVEAL_TIME_SECONDS + CHAT_TIME_SECONDS;
             
             if (elapsed > totalRoundTime) {
-                // ¡Tiempo fuera! Forzar votación
                 console.log(`Tiempo fuera. Forzando votación...`);
                 const gameRef = getGameRef(currentGameId);
                 await updateDoc(gameRef, { 
@@ -1478,7 +1463,7 @@
         // --- Fin del Juego y Reinicio ---
         function displayGameOver(gameData) {
             window.onbeforeunload = null;
-            if (unsubscribeChat) unsubscribeChat(); // <-- Detener listener de chat
+            if (unsubscribeChat) unsubscribeChat(); 
 
             const finalScoreList = document.getElementById('final-score-list'); 
             const winnerText = document.getElementById('final-winner-text'); 
@@ -1564,14 +1549,13 @@
 
             if (unsubscribeGame) unsubscribeGame();
             if (unsubscribePlayers) unsubscribePlayers();
-            if (unsubscribeChat) unsubscribeChat(); // <-- Limpiar chat
+            if (unsubscribeChat) unsubscribeChat(); 
             
             if (currentGameId && currentUserId) {
                 const playerRef = doc(getPlayersRef(currentGameId), currentUserId);
                 await deleteDoc(playerRef);
                 
                 if (isHost) {
-                    // Borrar el juego y el chat
                     const playersQuery = await getDocs(getPlayersRef(currentGameId));
                     const chatQuery = await getDocs(getChatRef(currentGameId));
                     const batch = writeBatch(db);
